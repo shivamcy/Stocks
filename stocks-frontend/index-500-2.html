@@ -1,0 +1,580 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Stock Data Treemap</title>
+    <script src="d3.v7.js"></script>
+    <style>
+      * {
+        font-family: "Droid Sans";
+      }
+      #treemap {
+      background: rgb(2,0,36);
+background: linear-gradient(90deg, rgba(2,0,36,1) 0%, rgba(255,255,255,1) 0%, rgba(228,228,228,1) 100%);
+      border: 2px solid black; /* Border for the outer boundary of the treemap */
+      padding: 0; /* Ensures there is no padding inside the container */
+      display: block; /* This can help remove any unnecessary margins */
+      height: 500px; /* Fixed height for the treemap container */
+      /* You can adjust the height value as needed */
+    }
+
+      #treemap svg {
+        display: block; /* This can help remove any unnecessary margins */
+        width: 100%; /* Ensure the SVG fills the container horizontally */
+        height: auto; /* Ensure the SVG fills the container vertically while maintaining the aspect ratio */
+      }
+      .node {
+        border: solid 1px white;
+        font: 10px sans-serif;
+        line-height: 12px;
+        overflow: hidden;
+        position: absolute;
+        text-indent: 2px;
+      }
+
+      .node-label, .node-percentage, .node-ticker {
+    fill: #fff; /* White color for visibility */
+    font-size: 12px; /* Adjust font size as needed */
+    pointer-events: none; /* Prevents text from interfering with zoom/pan events */
+    font-weight: bold;
+}
+
+      /* Additional CSS for date pairs */
+      .date-pair-table {
+        border-collapse: collapse;
+        width: 100%;
+        margin-top: 20px;
+      }
+
+      .date-pair-table th,
+      .date-pair-table td {
+        border: 1px solid #ddd;
+        padding: 8px;
+        text-align: left;
+      }
+
+      .date-pair-table th {
+        background-color: #4caf50;
+        color: white;
+      }
+
+      .date-pair-table tr:nth-child(even) {
+        background-color: #f2f2f2;
+      }
+
+      .date-pair-table tr:hover {
+        background-color: #ddd;
+      }
+
+      .date-pair-table td {
+  cursor: pointer; /* Changes the cursor to a hand pointer when hovering over the table cells */
+  /* rest of your existing styles for td */
+}
+
+      /* Adjust the overall layout to use flexbox for alignment */
+      #controls-and-legend {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.control-group {
+  background-color: #dffff6; /* Light grey background */
+  padding: 10px; /* Padding for spacing */
+  border-radius: 5px; /* Slightly rounded corners */
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1); /* Subtle shadow for depth */
+  margin-bottom: 20px; /* Space from the next elements */
+}
+
+.control-group label, .control-group select, .control-group input, .control-group button {
+  font-size: 14px; /* Consistent font size */
+  color: #495057; /* Dark grey for text for readability */
+}
+
+.control-group button {
+  background-color: #28b858;
+  color: white; /* White text on buttons */
+  border: none; /* Remove default border */
+  padding: 5px 10px; /* Padding inside buttons */
+  border-radius: 5px; /* Match the border-radius with the control group */
+  cursor: pointer; /* Pointer cursor on hover */
+  transition: background-color 0.2s; /* Smooth transition for background color */
+}
+
+.control-group button:hover {
+  background-color: #197a39; /* Darker shade on hover */
+}
+
+/* Additional customizations for input and select elements */
+.control-group select, .control-group input[type="date"] {
+  border: 1px solid #ced4da; /* Light grey border */
+  border-radius: 5px; /* Rounded borders */
+  padding: 5px; /* Padding inside inputs */
+}
+
+      .legend {
+        display: flex;
+        gap: 4px; /* Adjust the gap between legend items if necessary */
+        justify-content: flex-end; /* Align legend to the right side */
+        font-family: "Droid Sans"; /* Apply the Droid Sans font to all legend items */
+      }
+
+      .legend-item {
+        position: relative; /* Establish a positioning context for the percentage label */
+        display: flex;
+        align-items: center;
+      }
+
+      .legend-color-box {
+        width: 60px; /* Increase width to fit text inside */
+        height: 30px;
+        border-radius: 4px; /* Rounded edges for the color boxes */
+        display: flex;
+        justify-content: center; /* Center the text horizontally */
+        align-items: center; /* Center the text vertically */
+      }
+
+      .legend-label {
+        position: absolute; /* Position the label absolutely to overlay the color box */
+        width: 100%; /* Make the label as wide as the color box */
+        text-align: center; /* Center align the text */
+        font-size: 16px;
+        color: white; /* Change text color if necessary for visibility */
+        pointer-events: none; /* Prevent mouse events on the label */
+      }
+    </style>
+  </head>
+  <body>
+    <div id="tooltip" style="position: absolute; z-index: 1000; visibility: hidden; background-color: white; border: 1px solid black; padding: 10px; border-radius: 3px; pointer-events: none;"></div>
+
+
+    <div id="controls-and-legend">
+    <div class="control-group">
+      <label for="start-date">Start Date:</label>
+      <input type="date" id="start-date" />
+      <label for="end-date">End Date:</label>
+      <input type="date" id="end-date" />
+      <button id="load-data">Load Data</button>
+    </div>
+
+    <div class="control-group">
+      <label for="mono-sized-toggle">Mono-Sized:</label>
+      <input type="checkbox" id="mono-sized-toggle" />
+      <label for="exchange-select">Exchange:</label>
+      <select id="exchange-select">
+  <option value="all">All US Stock Exchanges</option>
+  <option value="snp500" selected>S&P500</option>
+</select>
+
+<label for="heat-multiplier">Heat Multiplier:</label>
+      <select id="heat-multiplier">
+        <option value="0.1">x0.1</option>
+        <option value="0.2">x0.2</option>
+        <option value="0.25">x0.25</option>
+        <option value="0.5">x0.5</option>
+        <option value="1" selected>x1</option>
+        <option value="2">x2</option>
+        <option value="3">x3</option>
+        <option value="5">x5</option>
+        <option value="10">x10</option>
+      </select>
+    </div>
+      <!-- Container for the legend -->
+      <div id="legend" class="legend"></div>
+    </div>
+
+    <br />
+    <div id="treemap"></div>
+
+    <h2>Data Loading Information</h2>
+    <p>
+      Below dates have cached data stored in local database(mysql). Data for cached dates will load quickly. Also, to see data for any other dates, you need internet access. If you don't have internet access, you can still
+      view data for cached dates.
+    </p>
+    <p>
+      Other dates may take up to 1 minute to load. You might as well need to refresh the website in order to load new data from the internet. If you refresh and see lessser number of nodes in the treemap, it is because the MySQL database that acts as cache is currently being filled with the new data. So, refresh again after a few seconds and you will (hopefully) see all the nodes (stocks). As you view data for different days, the newly fetched data will also be cached
+      for you, and can be quickly seen again.
+
+    </p>
+    <p>
+      You can even click on the rows of this table to directly enter the dates in the input fields above!
+    </p>
+    <br>
+    <p><h3>CACHED DATA</h3></p>
+    <div id="datePairs" class="date-pair"></div>
+    <table id="datePairs" class="date-pair-table">
+      <thead>
+        <tr>
+          <th>Start Date</th>
+          <th>End Date</th>
+        </tr>
+      </thead>
+      <tbody>
+        <!-- Rows will be added here dynamically -->
+      </tbody>
+    </table>
+
+    <script>
+      var allExchanges = false;
+      // Fetching date pairs from the PHP script
+      document.addEventListener("DOMContentLoaded", function () {
+        // Fetching date pairs from the PHP script
+        fetch("/final-final-stocks/php-polygon/cache-metadata.php")
+          .then((response) => response.json())
+          .then(function (datePairs) {
+            var datePairsTableBody = document.querySelector("#datePairs tbody");
+            datePairs.forEach(function (pair) {
+              var row = datePairsTableBody.insertRow();
+              var cell1 = row.insertCell(0);
+              var cell2 = row.insertCell(1);
+              cell1.textContent = pair.start_date;
+              cell2.textContent = pair.end_date;
+
+            // Add click event listener to each row
+        row.addEventListener('click', function() {
+          document.getElementById('start-date').value = pair.start_date;
+          document.getElementById('end-date').value = pair.end_date;
+        });
+      });
+    })
+          .catch(function (error) {
+            console.log("Error fetching date pairs: ", error);
+          });
+      });
+
+document.getElementById("exchange-select").addEventListener("change", function (event) {
+    var startDate = document.getElementById("start-date").value;
+    var endDate = document.getElementById("end-date").value;
+    if (startDate && endDate && validateDates(startDate, endDate)) {
+        allExchanges = event.target.value === 'all';
+        fetchData(startDate, endDate, allExchanges); // Pass allExchanges flag to fetchData
+    }
+});
+
+// Function to update tooltip content and position
+function updateTooltip(nodeData) {
+  var tooltip = d3.select("#tooltip");
+  tooltip.html(
+    "<b>Ticker:</b> " + nodeData.data.name + "<br/>" +
+    "<b>Start Price:</b> $" + nodeData.data.start_close.toFixed(2) + "<br/>" +
+    "<b>End Price:</b> $" + nodeData.data.end_close.toFixed(2) + "<br/>" +
+    "<b>Percentage Change:</b> " + calculatePercentageChange(nodeData.data.start_close, nodeData.data.end_close).toFixed(2) + "%"
+  );
+}
+
+
+      // Define the color mapping and labels for the legend
+      var colorMapping = [
+        { color: "#056636", label: "+3%" },
+        { color: "#089950", label: "+2%" },
+        { color: "#42BD7F", label: "+1%" },
+        { color: "#C1C4CD", label: "0%" },
+        { color: "#F77C80", label: "-3%" },
+        { color: "#F23645", label: "-2%" },
+        { color: "#991F29", label: "-1%" },
+      ];
+
+      // Function to create the legend
+      function createLegend() {
+        var legend = d3.select("#legend");
+
+        var items = legend
+          .selectAll(".legend-item")
+          .data(colorMapping)
+          .enter()
+          .append("div")
+          .attr("class", "legend-item");
+
+        items
+          .append("div")
+          .attr("class", "legend-color-box")
+          .style("background-color", (d) => d.color)
+          .append("div")
+          .attr("class", "legend-label")
+          .text((d) => d.label); // Add the label text inside the color box
+      }
+
+      // Function to update the legend labels dynamically based on threshold values
+    function updateLegendLabels() {
+      var multiplier = parseFloat(document.getElementById("heat-multiplier").value);
+      var thresholdValues = {
+        dark_green: 3 * multiplier,
+        medium_green: 2 * multiplier,
+        light_green: 1 * multiplier,
+        light_red: -1 * multiplier,
+        medium_red: -2 * multiplier,
+        dark_red: -3 * multiplier,
+      };
+
+      // Update the labels in the colorMapping array
+      colorMapping[0].label = `+${thresholdValues.dark_green.toFixed(1)}%`; // Dark Green
+      colorMapping[1].label = `+${thresholdValues.medium_green.toFixed(1)}%`; // Medium Green
+      colorMapping[2].label = `+${thresholdValues.light_green.toFixed(1)}%`; // Light Green
+      colorMapping[4].label = `${thresholdValues.light_red.toFixed(1)}%`; // Light Red
+      colorMapping[5].label = `${thresholdValues.medium_red.toFixed(1)}%`; // Medium Red
+      colorMapping[6].label = `${thresholdValues.dark_red.toFixed(1)}%`; // Dark Red
+
+      // Update the legend on the page
+      d3.selectAll(".legend-label").data(colorMapping).text((d) => d.label);
+    }
+
+
+      // Call the function to create the legend
+      createLegend();
+
+      updateLegendLabels();
+
+      // Function to validate dates
+      function validateDates(startDate, endDate) {
+        // Parse dates to compare
+        var start = new Date(startDate);
+        var end = new Date(endDate);
+
+        // Check if start date is greater than end date
+        return start < end;
+      }
+
+      document.getElementById("load-data").addEventListener("click", function () {
+        var startDate = document.getElementById("start-date").value;
+        var endDate = document.getElementById("end-date").value;
+
+        // Validate dates before fetching data
+        if (startDate && endDate && validateDates(startDate, endDate)) {
+          fetchData(startDate, endDate);
+        } else {
+          // Alert user or handle invalid dates appropriately
+          alert("Start date must not be later than end date.");
+        }
+      });
+      // Function to calculate the percentage change
+      function calculatePercentageChange(start, end) {
+        return ((end - start) / start) * 100;
+      }
+
+      // Event listener for the heat multiplier dropdown
+      document.getElementById("heat-multiplier").addEventListener("change", function () {
+        var startDate = document.getElementById("start-date").value;
+        var endDate = document.getElementById("end-date").value;
+        if (startDate && endDate && validateDates(startDate, endDate)) {
+          fetchData(startDate, endDate); // Call fetchData to re-render the treemap
+          updateLegendLabels(); // Update the legend labels
+        }
+      });
+
+      document.getElementById("mono-sized-toggle").addEventListener("change", function () {
+  var startDate = document.getElementById("start-date").value;
+  var endDate = document.getElementById("end-date").value;
+  if (startDate && endDate && validateDates(startDate, endDate)) {
+    fetchData(startDate, endDate);
+  }
+});
+
+
+      // Function to get color based on percentage change
+      function getColor(percentageChange) {
+        var threshold_dark_green = 3;
+        var threshold_medium_green = 2;
+        var threshold_light_green = 1;
+        var threshold_light_red = -1;
+        var threshold_medium_red = -2;
+        var threshold_dark_red = -3;
+        var multiplier = parseFloat(document.getElementById("heat-multiplier").value);
+        threshold_dark_green = threshold_dark_green * multiplier;
+        threshold_medium_green = threshold_medium_green * multiplier;
+        threshold_light_green = threshold_light_green * multiplier;
+        threshold_light_red = threshold_light_red * multiplier;
+        threshold_medium_red = threshold_medium_red * multiplier;
+        threshold_dark_red = threshold_dark_red * multiplier;
+
+        if (percentageChange > 0) {
+          // Positive change (green shades)
+          if (percentageChange >= threshold_dark_green) {
+            return "#056636"; // Dark green for large increases
+          } else if (percentageChange >= threshold_medium_green) {
+            return "#089950"; // Medium green
+          } else if (percentageChange >= threshold_light_green) {
+            return "#42BD7F"; // Light green
+          }
+          return "#C1C4CD";
+        } else {
+          // Negative change (red shades)
+          if (percentageChange <= threshold_dark_red) {
+            return "#991F29"; // Dark red for large decreases
+          } else if (percentageChange <= threshold_medium_red) {
+            return "#F23645"; // Medium red
+          } else if (percentageChange <= threshold_light_red) {
+            return "#F77C80"; // Light red
+          }
+          return "#C1C4CD";
+        }
+      }
+
+      function fetchData(startDate, endDate, allExchanges = false) {
+            // Clear any existing SVG element
+            var existingSvg = d3.select("#treemap svg");
+            if (!existingSvg.empty()) {
+                existingSvg.remove();
+            }
+
+            var url = allExchanges
+                ? `/final-final-stocks/php-polygon/json-data.php?start_date=${startDate}&end_date=${endDate}`
+                : `/final-final-stocks/php-polygon/json-data-snp-2.php?start_date=${startDate}&end_date=${endDate}`;
+
+            fetch(url)
+                .then((response) => response.json())
+                .then(function (data) {
+            // Function to generate unique IDs
+            let uidCounter = 0;
+            function uniqueId(prefix) {
+              uidCounter++;
+              return `${prefix}${uidCounter}`;
+            }
+
+            // Function to process data into hierarchy required for D3 treemap
+            function processData(data) {
+              var treeData = { name: "Stocks", children: [] };
+              data.forEach(function (d) {
+                treeData.children.push({
+                  name: d.ticker,
+                  value: document.getElementById('mono-sized-toggle').checked ? 1 : Math.abs(d.end_close - d.start_close),
+                  start_close: d.start_close,
+                  end_close: d.end_close,
+                });
+              });
+              return treeData;
+            }
+            // Adjust treemap size to fit within the reserved space
+      var width = document.getElementById('treemap').clientWidth; // Use the width of the container
+      var height = document.getElementById('treemap').clientHeight; // Use the reserved height
+            var treemapLayout = d3.treemap().size([width, height]).paddingInner(1);
+
+// If mono-sized is checked, use uniform layout
+if (document.getElementById('mono-sized-toggle').checked) {
+  treemapLayout.tile(d3.treemapSquarify);
+}
+
+            // Processing the data
+            var rootNode = d3
+              .hierarchy(processData(data))
+              .sum(function (d) {
+                return d.value;
+              })
+              .sort((a, b) => b.height - a.height || b.value - a.value);
+
+            treemapLayout(rootNode);
+
+            // Zoom behavior
+            var zoom = d3
+              .zoom()
+              .scaleExtent([1, 8]) // Adjust the min and max zoom levels as needed
+              .on("zoom", (event) => {
+                // Restrict translation to prevent panning outside of the viewable area
+                const transform = event.transform;
+                const dx = Math.min(0, Math.max(transform.x, width - width * transform.k));
+                const dy = Math.min(0, Math.max(transform.y, height - height * transform.k));
+                g.attr("transform", `translate(${dx},${dy}) scale(${transform.k})`);
+              });
+
+            // Create an SVG element for treemap
+            var svg = d3
+              .select("#treemap")
+              .append("svg")
+              .attr("width", "100%")
+              .attr("height", "100%")
+              .attr("viewBox", `0 0 ${width} ${height}`)
+              .attr("preserveAspectRatio", "xMidYMid meet")
+              .call(zoom);
+
+            // Group to apply the zoom transformations
+            var g = svg.append("g");
+
+            // Note: Ensure that the 'leaf' elements are appended to 'g' and not directly to 'svg'
+            var leaf = g
+              .selectAll("g")
+              .data(rootNode.leaves())
+              .enter()
+              .append("g")
+              .attr("transform", (d) => `translate(${d.x0},${d.y0})`);
+
+            leaf
+              .append("rect")
+              .attr("id", (d) => (d.leafUid = uniqueId("leaf")).id)
+              .attr("fill", (d) => {
+                let stockData = data.find((stock) => stock.ticker === d.data.name);
+                if (stockData) {
+                  let percentageChange = calculatePercentageChange(stockData.start_close, stockData.end_close);
+                  return getColor(percentageChange);
+                }
+                return "#C1C4CD"; // Fallback color
+              })
+              .attr("width", (d) => d.x1 - d.x0)
+              .attr("height", (d) => d.y1 - d.y0);
+
+
+        // Mouseover event listener to display tooltip
+leaf.on("mouseover", function(event, d) {
+  updateTooltip(d);
+  d3.select("#tooltip").style("visibility", "visible");
+});
+
+// Mousemove event listener to move the tooltip with the mouse
+leaf.on("mousemove", function(event, d) {
+  d3.select("#tooltip")
+    .style("top", (event.pageY - 10) + "px")
+    .style("left", (event.pageX + 10) + "px");
+});
+
+// Mouseout event listener to hide the tooltip
+leaf.on("mouseout", function() {
+  d3.select("#tooltip").style("visibility", "hidden");
+});
+
+        // Function to calculate font size based on node size
+        function calculateFontSize(node) {
+            var minFontSize = 8; // Minimum font size
+            var maxFontSize = 60; // Maximum font size
+            var scale = d3.scaleLinear()
+                          .domain([0, 500]) // Adjust domain based on your data
+                          .range([minFontSize, maxFontSize])
+                          .clamp(true);
+            return scale(Math.min(node.x1 - node.x0, node.y1 - node.y0));
+        }
+
+        // Modify the leaf data join for the ticker label
+        leaf.append("text")
+            .attr("class", "node-ticker")
+            .text(function(d) { return d.data.name; })
+            .attr("x", 5)
+            .attr("y", function(d) { return (d.y1 - d.y0) * 0.3; })
+            .style("font-size", function(d) { return calculateFontSize(d) + "px"; })
+            .style("display", function(d) {
+                return ((d.x1 - d.x0) > 60 && (d.y1 - d.y0) > 40) ? "inline" : "none";
+            });
+
+        // Modify the leaf data join for the percentage change label
+        leaf.append("text")
+            .attr("class", "node-percentage")
+            .text(function(d) {
+                let stockData = data.find(stock => stock.ticker === d.data.name);
+                if (stockData) {
+                    let percentageChange = calculatePercentageChange(stockData.start_close, stockData.end_close);
+                    return `${percentageChange.toFixed(2)}%`;
+                }
+                return "";
+            })
+            .attr("x", 5)
+            .attr("y", function(d) { return ((d.y1 - d.y0) / 2) + 12; })
+            .style("font-size", function(d) { return calculateFontSize(d) + "px"; })
+            .style("display", function(d) {
+                return ((d.x1 - d.x0) > 40 && (d.y1 - d.y0) > 20) ? "inline" : "none";
+            });
+          })
+          .catch(function (error) {
+            console.log(error);
+
+          });
+      }
+    </script>
+  </body>
+</html>
